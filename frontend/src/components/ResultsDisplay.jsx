@@ -24,7 +24,9 @@ const ResultsDisplay = ({ results }) => {
             <TableCell><strong>Ticker</strong></TableCell>
             <TableCell><strong>Feature</strong></TableCell>
             <TableCell align="right"><strong>Value</strong></TableCell>
-            <TableCell><strong>Filing</strong></TableCell>
+            <TableCell><strong>Form</strong></TableCell>
+            <TableCell><strong>Filing Date</strong></TableCell>
+            <TableCell><strong>Source</strong></TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -41,6 +43,8 @@ const ResultsDisplay = ({ results }) => {
                   'Not found'
                 )}
               </TableCell>
+              <TableCell>{result.form_type || '-'}</TableCell>
+              <TableCell>{result.filing_date || '-'}</TableCell>
               <TableCell>
                 {result.filing_url && (
                   <Link href={result.filing_url} target="_blank" rel="noopener">

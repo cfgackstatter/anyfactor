@@ -1,5 +1,5 @@
 import requests
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 HEADERS = {"User-Agent": "anyfactor-app contact@example.com"}
 
@@ -18,8 +18,8 @@ def ticker_to_cik(ticker: str) -> Optional[str]:
         print(f"Error fetching ticker data: {e}")
         return None
 
-def get_filing_urls(cik: str, forms: List[str] = ["10-K", "10-Q"], limit: int = 10) -> List[str]:
-    """Get HTM URLs for recent filings for a CIK."""
+def get_filing_urls(cik: str, forms: List[str] = ["10-K", "10-Q"], limit: int = 10) -> List[Dict[str, str]]:
+    """Get HTM URLs and metadata for recent filings for a CIK."""
     try:
         resp = requests.get(f"https://data.sec.gov/submissions/CIK{cik}.json", headers=HEADERS)
         resp.raise_for_status()
@@ -28,21 +28,28 @@ def get_filing_urls(cik: str, forms: List[str] = ["10-K", "10-Q"], limit: int = 
         print(f"Error fetching filings: {e}")
         return []
     
-    urls = []
+    filings_list = []
     filings = data.get("filings", {}).get("recent", {})
     accession_numbers = filings.get("accessionNumber", [])
     form_types = filings.get("form", [])
     primary_documents = filings.get("primaryDocument", [])
+    filing_dates = filings.get("filingDate", [])  # NEW: Get filing dates
     
-    for acc, form, primary_doc in zip(accession_numbers, form_types, primary_documents):
+    for acc, form, primary_doc, filing_date in zip(accession_numbers, form_types, primary_documents, filing_dates):
         if form in forms and primary_doc:
             acc_no = acc.replace("-", "")
             htm_url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc_no}/{primary_doc}"
-            urls.append(htm_url)
-        if len(urls) >= limit:
+            
+            filings_list.append({
+                "url": htm_url,
+                "form_type": form,
+                "filing_date": filing_date  # NEW: Include date
+            })
+            
+        if len(filings_list) >= limit:
             break
     
-    return urls
+    return filings_list
 
 
 if __name__ == "__main__":

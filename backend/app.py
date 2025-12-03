@@ -29,7 +29,13 @@ def extract_feature():
     Returns:
     {
         "results": [
-            {"ticker": "AAPL", "value": 62146000000, "filing_url": "..."},
+            {
+                "ticker": "AAPL", 
+                "value": 62146000000, 
+                "filing_url": "...",
+                "filing_date": "2024-09-28",
+                "form_type": "10-K"
+            },
             ...
         ]
     }
@@ -55,9 +61,9 @@ def extract_feature():
                 })
                 continue
             
-            # Get filing URLs
-            urls = get_filing_urls(cik, limit=limit)
-            if not urls:
+            # Get filing URLs and metadata
+            filings = get_filing_urls(cik, limit=limit)
+            if not filings:
                 results.append({
                     "ticker": ticker,
                     "error": "No filings found"
@@ -65,8 +71,8 @@ def extract_feature():
                 continue
             
             # Process first filing
-            filing_url = urls[0]
-            html = fetch_filing(filing_url)
+            filing = filings[0]
+            html = fetch_filing(filing["url"])
             if not html:
                 results.append({
                     "ticker": ticker,
@@ -81,7 +87,9 @@ def extract_feature():
             results.append({
                 "ticker": ticker,
                 "value": value,
-                "filing_url": filing_url,
+                "filing_url": filing["url"],
+                "filing_date": filing["filing_date"],
+                "form_type": filing["form_type"],
                 "feature": feature
             })
         
