@@ -7,6 +7,7 @@ import {
   Paper,
   AppBar,
   Toolbar,
+  TextField,
 } from '@mui/material';
 import FeatureInput from './components/FeatureInput';
 import TickerSelector from './components/TickerSelector';
@@ -17,6 +18,7 @@ import { extractFeature } from './api';
 function App() {
   const [feature, setFeature] = useState('');
   const [tickers, setTickers] = useState([]);
+  const [numFilings, setNumFilings] = useState(5);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +34,7 @@ function App() {
     setResults([]);
 
     try {
-      const data = await extractFeature(tickers, feature);
+      const data = await extractFeature(tickers, feature, numFilings);
       setResults(data.results);
     } catch (err) {
       setError(err);
@@ -63,6 +65,17 @@ function App() {
           <Box sx={{ mt: 3 }}>
             <FeatureInput value={feature} onChange={setFeature} />
             <TickerSelector tickers={tickers} setTickers={setTickers} />
+            
+            <TextField
+              type="number"
+              label="Number of Filings"
+              value={numFilings}
+              onChange={(e) => setNumFilings(Math.max(1, Math.min(20, parseInt(e.target.value) || 5)))}
+              inputProps={{ min: 1, max: 20 }}
+              helperText="Extract from 1-20 most recent filings per ticker"
+              margin="normal"
+              sx={{ width: '250px' }}
+            />
 
             {error && (
               <Typography color="error" sx={{ mt: 2 }}>
