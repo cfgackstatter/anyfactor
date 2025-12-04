@@ -31,7 +31,7 @@ def table_to_markdown(table: Tag) -> str:
     
 def clean_html(html: str) -> str:
     """Extract clean text from SEC filing with tables as markdown."""
-    soup = BeautifulSoup(html, 'lxml')
+    soup = BeautifulSoup(html, 'html.parser')
     
     # Remove script, style, and header elements
     for tag in soup(['script', 'style', 'meta', 'link']):
