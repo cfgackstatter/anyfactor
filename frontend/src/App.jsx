@@ -13,6 +13,7 @@ import FeatureInput from './components/FeatureInput';
 import TickerSelector from './components/TickerSelector';
 import ResultsDisplay from './components/ResultsDisplay';
 import LoadingOverlay from './components/LoadingOverlay';
+import TrendChart from './components/TrendChart';
 import { extractFeature } from './api';
 
 function App() {
@@ -42,6 +43,23 @@ function App() {
       setLoading(false);
     }
   };
+
+  // Group results by ticker for charts
+  const getChartData = () => {
+    const grouped = {};
+    results.forEach(result => {
+      if (result.value !== null && !result.error) {
+        const key = `${result.ticker}-${result.feature}`;
+        if (!grouped[key]) {
+          grouped[key] = [];
+        }
+        grouped[key].push(result);
+      }
+    });
+    return Object.values(grouped);
+  };
+
+  const chartData = getChartData();
 
   return (
     <>
@@ -96,6 +114,11 @@ function App() {
           </Box>
 
           <ResultsDisplay results={results} />
+
+          {/* Trend Charts */}
+          {chartData.map((data, idx) => (
+            <TrendChart key={idx} data={data} />
+          ))}
         </Paper>
       </Container>
 
