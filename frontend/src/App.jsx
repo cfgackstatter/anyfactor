@@ -44,12 +44,12 @@ function App() {
     }
   };
 
-  // Group results by ticker for charts
+  // Group results by ticker-feature-period_type for separate charts
   const getChartData = () => {
     const grouped = {};
     results.forEach(result => {
       if (result.value !== null && !result.error) {
-        const key = `${result.ticker}-${result.feature}`;
+        const key = `${result.ticker}-${result.feature}-${result.period_type || 'unknown'}`;
         if (!grouped[key]) {
           grouped[key] = [];
         }
@@ -115,7 +115,7 @@ function App() {
 
           <ResultsDisplay results={results} />
 
-          {/* Trend Charts */}
+          {/* Trend Charts - Now separated by period type */}
           {chartData.map((data, idx) => (
             <TrendChart key={idx} data={data} />
           ))}

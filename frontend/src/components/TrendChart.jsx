@@ -15,7 +15,6 @@ import {
   Legend,
 } from 'chart.js';
 
-// Register Chart.js components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -28,25 +27,24 @@ ChartJS.register(
 
 const TrendChart = ({ data }) => {
   if (!data || data.length < 2) {
-    return null; // Need at least 2 points for a trend
+    return null;
   }
 
-  // Sort by date (oldest first)
   const sortedData = [...data].sort((a, b) => 
     new Date(a.filing_date) - new Date(b.filing_date)
   );
 
-  // Extract dates and values
   const dates = sortedData.map(d => d.filing_date);
   const values = sortedData.map(d => d.value || 0);
-
-  // Calculate statistics
+  
   const latestValue = values[values.length - 1];
   const oldestValue = values[0];
   const growthRate = ((latestValue - oldestValue) / oldestValue) * 100;
   const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
+  
+  const periodType = data[0].period_type || 'unknown';
+  const periodLabel = periodType === 'annual' ? 'Annual' : 'Quarterly';
 
-  // Determine trend direction
   const getTrendIcon = () => {
     if (growthRate > 5) return <TrendingUpIcon sx={{ color: '#10B981' }} />;
     if (growthRate < -5) return <TrendingDownIcon sx={{ color: '#EF4444' }} />;
@@ -59,7 +57,6 @@ const TrendChart = ({ data }) => {
     return '#6B7280';
   };
 
-  // Chart configuration
   const chartData = {
     labels: dates,
     datasets: [
@@ -103,7 +100,7 @@ const TrendChart = ({ data }) => {
     <Paper elevation={2} sx={{ p: 3, mt: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">
-          {data[0].feature} - {data[0].ticker}
+          {data[0].feature} - {data[0].ticker} ({periodLabel})
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Chip

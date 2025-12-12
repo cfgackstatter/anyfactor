@@ -24,6 +24,7 @@ const ResultsDisplay = ({ results }) => {
             <TableCell><strong>Ticker</strong></TableCell>
             <TableCell><strong>Feature</strong></TableCell>
             <TableCell align="right"><strong>Value</strong></TableCell>
+            <TableCell><strong>Period</strong></TableCell>
             <TableCell><strong>Form</strong></TableCell>
             <TableCell><strong>Filing Date</strong></TableCell>
             <TableCell><strong>Source</strong></TableCell>
@@ -43,6 +44,7 @@ const ResultsDisplay = ({ results }) => {
                   'Not found'
                 )}
               </TableCell>
+              <TableCell>{result.period_type || '-'}</TableCell>
               <TableCell>{result.form_type || '-'}</TableCell>
               <TableCell>{result.filing_date || '-'}</TableCell>
               <TableCell>
