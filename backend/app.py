@@ -19,7 +19,6 @@ def health():
 def extract_feature():
     """
     Extract numeric feature from SEC filings.
-    
     Returns results with period_type for annual/quarterly separation.
     """
     try:
@@ -48,28 +47,70 @@ def extract_feature():
             for filing in filings:
                 html = fetch_filing(filing["url"])
                 if not html:
+                    # Still create placeholder rows for failed fetches
+                    if filing["form_type"] == "10-K":
+                        results.append({
+                            "ticker": ticker,
+                            "value": None,
+                            "period_type": "annual",
+                            "filing_url": filing["url"],
+                            "filing_date": filing["filing_date"],
+                            "form_type": filing["form_type"],
+                            "feature": feature,
+                            "error": "Failed to fetch filing"
+                        })
+                        results.append({
+                            "ticker": ticker,
+                            "value": None,
+                            "period_type": "quarterly",
+                            "filing_url": filing["url"],
+                            "filing_date": filing["filing_date"],
+                            "form_type": filing["form_type"],
+                            "feature": feature,
+                            "error": "Failed to fetch filing"
+                        })
+                    else:  # 10-Q
+                        results.append({
+                            "ticker": ticker,
+                            "value": None,
+                            "period_type": "quarterly",
+                            "filing_url": filing["url"],
+                            "filing_date": filing["filing_date"],
+                            "form_type": filing["form_type"],
+                            "feature": feature,
+                            "error": "Failed to fetch filing"
+                        })
                     continue
                 
                 clean_text = prepare_for_llm(html)
                 values_dict = extract_numeric_feature(clean_text, feature, filing["form_type"])
                 
-                # Add annual result if exists
-                if values_dict.get("annual") is not None:
+                # For 10-K: Always create both annual and quarterly rows
+                if filing["form_type"] == "10-K":
                     results.append({
                         "ticker": ticker,
-                        "value": values_dict["annual"],
+                        "value": values_dict.get("annual"),
                         "period_type": "annual",
                         "filing_url": filing["url"],
                         "filing_date": filing["filing_date"],
                         "form_type": filing["form_type"],
                         "feature": feature
                     })
-                
-                # Add quarterly result if exists
-                if values_dict.get("quarterly") is not None:
                     results.append({
                         "ticker": ticker,
-                        "value": values_dict["quarterly"],
+                        "value": values_dict.get("quarterly"),
+                        "period_type": "quarterly",
+                        "filing_url": filing["url"],
+                        "filing_date": filing["filing_date"],
+                        "form_type": filing["form_type"],
+                        "feature": feature
+                    })
+                
+                # For 10-Q: Always create quarterly row
+                elif filing["form_type"] == "10-Q":
+                    results.append({
+                        "ticker": ticker,
+                        "value": values_dict.get("quarterly"),
                         "period_type": "quarterly",
                         "filing_url": filing["url"],
                         "filing_date": filing["filing_date"],
