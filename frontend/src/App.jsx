@@ -22,6 +22,7 @@ function App() {
   const [numFilings, setNumFilings] = useState(5);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState('');
 
   const handleExtract = async () => {
@@ -33,12 +34,24 @@ function App() {
     setLoading(true);
     setError('');
     setResults([]);
+    setLoadingMessage('Analyzing SEC filings with AI...');
 
     try {
-      const data = await extractFeature(tickers, feature, numFilings);
+      const data = await extractFeature(
+        tickers,
+        feature,
+        numFilings,
+        (progress) => {
+          // Update loading message with progress
+          const msg = tickers.length > 1
+            ? `Processing ${progress.ticker}: ${progress.current}/${progress.total} filings (${progress.ticker_current}/${progress.ticker_total} tickers)`
+            : `Processing ${progress.ticker}: ${progress.current}/${progress.total} filings`;
+          setLoadingMessage(msg);
+        }
+      );
       setResults(data.results);
     } catch (err) {
-      setError(err);
+      setError(err.message || 'Failed to extract feature');
     } finally {
       setLoading(false);
     }
@@ -122,7 +135,7 @@ function App() {
         </Paper>
       </Container>
 
-      <LoadingOverlay open={loading} message="Analyzing SEC filings with AI..." />
+      <LoadingOverlay open={loading} message={loadingMessage} />
     </>
   );
 }
