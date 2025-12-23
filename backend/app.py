@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 
 from sec import ticker_to_cik, get_filing_urls
 from parse import fetch_filing, prepare_for_llm
-from llm import extract_numeric_feature
+from llm import extract_feature
 
 app = Flask(__name__)
 CORS(app)
@@ -18,11 +18,8 @@ def health():
 
 
 @app.route('/api/extract', methods=['POST'])
-def extract_feature():
-    """
-    Extract numeric feature from SEC filings with streaming progress.
-    Returns NDJSON stream with progress updates and final results.
-    """
+def extract_endpoint():
+    """Extract features from SEC filings with streaming progress."""
     data = request.get_json()
     tickers = data.get('tickers', [])
     feature = data.get('feature', '')
@@ -32,7 +29,6 @@ def extract_feature():
         return jsonify({"error": "tickers and feature are required"}), 400
     
     def generate():
-        """Generator function that yields progress updates and results."""
         results = []
         
         for ticker_idx, ticker in enumerate(tickers):
@@ -46,9 +42,8 @@ def extract_feature():
                 results.append({"ticker": ticker, "error": "No filings found"})
                 continue
             
-            # Process each filing with progress updates
             for filing_idx, filing in enumerate(filings):
-                # Send progress update
+                # Send progress
                 progress_msg = {
                     "type": "progress",
                     "ticker": ticker,
@@ -61,54 +56,65 @@ def extract_feature():
                 
                 html = fetch_filing(filing["url"])
                 if not html:
-                    # Create placeholder rows
+                    # Add placeholder based on form type
                     if filing["form_type"] == "10-K":
                         results.extend([
-                            {"ticker": ticker, "value": None, "period_type": "annual", 
-                             "filing_url": filing["url"], "filing_date": filing["filing_date"],
-                             "form_type": filing["form_type"], "feature": feature, 
-                             "error": "Failed to fetch filing"},
-                            {"ticker": ticker, "value": None, "period_type": "quarterly",
-                             "filing_url": filing["url"], "filing_date": filing["filing_date"],
-                             "form_type": filing["form_type"], "feature": feature,
-                             "error": "Failed to fetch filing"}
+                            _create_result(ticker, None, "annual", filing, feature, "Failed to fetch"),
+                            _create_result(ticker, None, "quarterly", filing, feature, "Failed to fetch")
                         ])
                     else:
-                        results.append({
-                            "ticker": ticker, "value": None, "period_type": "quarterly",
-                            "filing_url": filing["url"], "filing_date": filing["filing_date"],
-                            "form_type": filing["form_type"], "feature": feature,
-                            "error": "Failed to fetch filing"
-                        })
+                        results.append(_create_result(ticker, None, "quarterly", filing, feature, "Failed to fetch"))
                     continue
                 
                 clean_text = prepare_for_llm(html)
-                values_dict = extract_numeric_feature(clean_text, feature, filing["form_type"])
+                extraction = extract_feature(clean_text, feature, filing["form_type"])
                 
-                # Create result rows
-                if filing["form_type"] == "10-K":
-                    results.extend([
-                        {"ticker": ticker, "value": values_dict.get("annual"),
-                         "period_type": "annual", "filing_url": filing["url"],
-                         "filing_date": filing["filing_date"], "form_type": filing["form_type"],
-                         "feature": feature},
-                        {"ticker": ticker, "value": values_dict.get("quarterly"),
-                         "period_type": "quarterly", "filing_url": filing["url"],
-                         "filing_date": filing["filing_date"], "form_type": filing["form_type"],
-                         "feature": feature}
-                    ])
-                elif filing["form_type"] == "10-Q":
+                # Process based on extraction type
+                if extraction.get("type") == "numeric":
+                    # Numeric extraction
+                    if filing["form_type"] == "10-K":
+                        results.extend([
+                            _create_result(ticker, extraction.get("annual"), "annual", filing, feature),
+                            _create_result(ticker, extraction.get("quarterly"), "quarterly", filing, feature)
+                        ])
+                    else:
+                        results.append(_create_result(ticker, extraction.get("quarterly"), "quarterly", filing, feature))
+                
+                elif extraction.get("type") == "score":
+                    # Qualitative score extraction
+                    score = extraction.get("score")
+                    evidence = extraction.get("evidence", "")
                     results.append({
-                        "ticker": ticker, "value": values_dict.get("quarterly"),
-                        "period_type": "quarterly", "filing_url": filing["url"],
-                        "filing_date": filing["filing_date"], "form_type": filing["form_type"],
+                        "ticker": ticker,
+                        "value": score,
+                        "value_type": "score",
+                        "evidence": evidence,
+                        "filing_url": filing["url"],
+                        "filing_date": filing["filing_date"],
+                        "form_type": filing["form_type"],
                         "feature": feature
                     })
         
-        # Send final results
         yield json.dumps({"type": "complete", "results": results}) + '\n'
     
     return Response(generate(), mimetype='application/x-ndjson')
+
+
+def _create_result(ticker: str, value: Any, period_type: str, filing: Dict, feature: str, error: str = None) -> Dict:
+    """Helper to create result dict."""
+    result = {
+        "ticker": ticker,
+        "value": value,
+        "value_type": "numeric",
+        "period_type": period_type,
+        "filing_url": filing["url"],
+        "filing_date": filing["filing_date"],
+        "form_type": filing["form_type"],
+        "feature": feature
+    }
+    if error:
+        result["error"] = error
+    return result
 
 
 if __name__ == '__main__':

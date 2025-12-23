@@ -30,7 +30,15 @@ const TrendChart = ({ data }) => {
     return null;
   }
 
-  const sortedData = [...data].sort((a, b) => 
+  // Filter out score-type data (charts only for numeric)
+  const numericData = data.filter(d => d.value_type !== 'score');
+
+  if (numericData.length < 2) {
+    return null;
+  }
+
+  // Sort by date (oldest first)
+  const sortedData = [...numericData].sort((a, b) => 
     new Date(a.filing_date) - new Date(b.filing_date)
   );
 
