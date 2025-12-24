@@ -115,6 +115,7 @@ Filing text:
 
 JSON:"""
     
+    result = ""  # Initialize result to avoid "possibly unbound" error
     try:
         response = client.chat.completions.create(
             model="sonar",
@@ -145,7 +146,7 @@ JSON:"""
         }
     except Exception as e:
         print(f"Error extracting qualitative: {e}")
-        print(f"Raw response: {result if 'result' in locals() else 'N/A'}")
+        print(f"Raw response: {result}")
         return {"type": "score", "score": None, "evidence": "Extraction failed"}
 
 
