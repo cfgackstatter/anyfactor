@@ -100,7 +100,7 @@ def extract_endpoint():
     return Response(generate(), mimetype='application/x-ndjson')
 
 
-def _create_result(ticker: str, value: Any, period_type: str, filing: Dict, feature: str, error: str = None) -> Dict:
+def _create_result(ticker: str, value: Any, period_type: str, filing: Dict, feature: str, error: Optional[str] = None) -> Dict:
     """Helper to create result dict."""
     result = {
         "ticker": ticker,

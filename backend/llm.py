@@ -111,7 +111,7 @@ Scoring guide:
 Keep evidence under 100 words, focus on facts and numbers.
 
 Filing text:
-{filing_text[:15000]}
+{filing_text[:30000]}
 
 JSON:"""
     
@@ -128,8 +128,16 @@ JSON:"""
         
         content: Any = response.choices[0].message.content
         result = "".join(getattr(item, 'text', str(item)) for item in content) if isinstance(content, list) else str(content)
+        result = result.strip()
         
-        data = json.loads(result.strip())
+        # Extract JSON if wrapped in markdown code blocks
+        if result.startswith("```"):
+            result = result.split("```")[1]
+            if result.startswith("json"):
+                result = result[4:]
+            result = result.strip()
+        
+        data = json.loads(result)
         return {
             "type": "score",
             "score": int(data.get("score", 5)),
@@ -137,6 +145,7 @@ JSON:"""
         }
     except Exception as e:
         print(f"Error extracting qualitative: {e}")
+        print(f"Raw response: {result if 'result' in locals() else 'N/A'}")
         return {"type": "score", "score": None, "evidence": "Extraction failed"}
 
 
@@ -153,7 +162,7 @@ Rules:
 - Return ONLY the JSON
 
 Filing text:
-{text[:15000]}
+{text[:30000]}
 
 JSON:"""
 
@@ -172,7 +181,7 @@ Rules:
 - Return ONLY the JSON
 
 Filing text:
-{text[:15000]}
+{text[:30000]}
 
 JSON:"""
 

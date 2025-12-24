@@ -61,7 +61,8 @@ function App() {
   const getChartData = () => {
     const grouped = {};
     results.forEach(result => {
-      if (result.value !== null && !result.error) {
+      if (result.value !== null && !result.error && result.value_type !== 'score') {
+        // Include ticker in the key to separate charts by ticker
         const key = `${result.ticker}-${result.feature}-${result.period_type || 'unknown'}`;
         if (!grouped[key]) {
           grouped[key] = [];

@@ -10,13 +10,11 @@ import {
   Link,
   Alert,
   Chip,
-  Tooltip,
   IconButton,
   Collapse,
   Box,
   Typography,
 } from '@mui/material';
-import InfoIcon from '@mui/icons-material/Info';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 const ResultsDisplay = ({ results }) => {
