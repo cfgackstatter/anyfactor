@@ -1,268 +1,182 @@
 import os
 import json
 import re
-from typing import Optional, Any, Dict
+from typing import Optional, Dict, Any, Callable
 from perplexity import Perplexity
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Chunk size for iterative search
 CHUNK_SIZE = 40000
 
 def extract_feature(filing_text: str, feature_name: str, form_type: str) -> Dict[str, Any]:
-    """
-    Auto-detect and extract either numeric or qualitative features.
-    
-    Returns:
-        Numeric: {"type": "numeric", "annual": X, "quarterly": Y}
-        Qualitative: {"type": "score", "score": X, "evidence": "..."}
-    """
+    """Auto-detect and extract either numeric or qualitative features."""
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
-        raise ValueError("PERPLEXITY_API_KEY not found in environment variables")
+        raise ValueError("PERPLEXITY_API_KEY not found")
     
     client = Perplexity(api_key=api_key)
+    feature_type = _classify_feature(client, feature_name)
     
-    # Step 1: Fast classification with optimized parameters
-    feature_type = _detect_feature_type(client, feature_name)
-    
-    # Step 2: Extract based on type
     if feature_type == "numeric":
-        return _extract_numeric_iterative(client, filing_text, feature_name, form_type)
+        return _extract_iteratively(client, filing_text, feature_name, form_type, 
+                                    _build_numeric_prompt, _parse_numeric)
     else:
-        return _extract_qualitative(client, filing_text, feature_name, form_type)
+        return _extract_iteratively(client, filing_text, feature_name, form_type,
+                                    _build_qualitative_prompt, _parse_qualitative)
 
 
-def _detect_feature_type(client: Perplexity, feature_name: str) -> str:
+def _classify_feature(client: Perplexity, feature_name: str) -> str:
     """Fast classification: numeric vs qualitative."""
-    prompt = f"""Is "{feature_name}" a numeric financial metric or a qualitative assessment?
-
-Examples of NUMERIC: revenue, book value, total assets, cash flow, R&D spending, number of employees
-Examples of QUALITATIVE: AI exposure, crypto involvement, ESG commitment, recession risk, innovation focus
-
-Answer with ONLY one word: "numeric" or "qualitative"
-
-Feature: {feature_name}
+    prompt = f"""Is "{feature_name}" numeric or qualitative?
+Numeric: revenue, assets, employees, spending
+Qualitative: AI exposure, ESG, innovation
 Answer:"""
     
     try:
         response = client.chat.completions.create(
             model="sonar",
-            messages=[
-                {"role": "system", "content": "Answer with one word only."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0,
-            max_tokens=5,      # ⭐ Optimized: just need 1 word
-            top_p=0.1          # ⭐ Optimized: focus on most likely answer
+            messages=[{"role": "system", "content": "One word only."}, 
+                     {"role": "user", "content": prompt}],
+            temperature=0.0, max_tokens=5, top_p=0.1
         )
-        
-        content: Any = response.choices[0].message.content
-        result = "".join(getattr(item, 'text', str(item)) for item in content) if isinstance(content, list) else str(content)
-        result = result.strip().lower()
-        
+        result = _extract_text(response.choices[0].message.content).lower()
         return "numeric" if "numeric" in result else "qualitative"
-    except Exception as e:
-        print(f"Classification error: {e}")
-        return "numeric"  # Default to numeric
+    except Exception:
+        return "numeric"
 
 
-def _extract_numeric_iterative(client: Perplexity, filing_text: str, feature_name: str, form_type: str) -> Dict[str, Any]:
-    """Extract numeric feature by searching chunks iteratively until found."""
-    # Create chunks
+def _extract_iteratively(client: Perplexity, filing_text: str, feature_name: str, 
+                         form_type: str, prompt_builder: Callable, parser: Callable) -> Dict[str, Any]:
+    """Search filing in chunks until data found."""
     chunks = [filing_text[i:i+CHUNK_SIZE] for i in range(0, len(filing_text), CHUNK_SIZE)]
+    priority = _get_chunk_priority(len(chunks))
     
-    # Smart chunk ordering: financial statements typically appear mid-to-late filing
-    # Skip chunk 0 (usually cover page), prioritize chunks 2-4 (where Item 6/8 typically are)
-    num_chunks = len(chunks)
-    if num_chunks > 4:
-        priority_order = [2, 3, 4, 1, 5, 6, 7, 8, 9] + list(range(10, num_chunks))
-    elif num_chunks > 1:
-        priority_order = list(range(1, num_chunks)) + [0]
-    else:
-        priority_order = [0]
+    print(f"Searching {len(chunks)} chunks for '{feature_name}'")
     
-    print(f"Searching {num_chunks} chunks for '{feature_name}' (40k chars each)")
-    
-    for chunk_idx in priority_order:
-        if chunk_idx >= num_chunks:
+    for idx in priority:
+        if idx >= len(chunks):
             continue
         
-        print(f"  Chunk {chunk_idx + 1}/{num_chunks}...")
-        result = _extract_numeric_from_chunk(client, chunks[chunk_idx], feature_name, form_type)
+        print(f"  Chunk {idx+1}...")
+        result = _extract_from_chunk(client, chunks[idx], feature_name, form_type, 
+                                     prompt_builder, parser)
         
-        # Stop if we found data
-        if form_type == "10-Q":
-            if result.get("quarterly") is not None:
-                print(f"  ✓ Found in chunk {chunk_idx + 1}")
-                return {"type": "numeric", **result}
-        else:  # 10-K
-            if result.get("annual") is not None or result.get("quarterly") is not None:
-                print(f"  ✓ Found in chunk {chunk_idx + 1}")
-                return {"type": "numeric", **result}
+        if _has_data(result):
+            print(f"  ✓ Found in chunk {idx+1}")
+            return result
     
-    # Not found in any chunk
-    print(f"  ✗ Not found in any chunk")
-    if form_type == "10-Q":
-        return {"type": "numeric", "quarterly": None}
-    else:
-        return {"type": "numeric", "annual": None, "quarterly": None}
+    print(f"  ✗ Not found")
+    return _empty_result(form_type, parser)
 
 
-def _extract_numeric_from_chunk(client: Perplexity, chunk_text: str, feature_name: str, form_type: str) -> Dict[str, Optional[float]]:
-    """Extract numeric feature from a single chunk."""
-    if form_type == "10-Q":
-        prompt = _build_10q_numeric_prompt(feature_name, chunk_text)
-    elif form_type == "10-K":
-        prompt = _build_10k_numeric_prompt(feature_name, chunk_text)
-    else:
-        return {}
-    
+def _extract_from_chunk(client: Perplexity, chunk: str, feature_name: str, 
+                        form_type: str, prompt_builder: Callable, parser: Callable) -> Dict[str, Any]:
+    """Extract from single chunk."""
     try:
         response = client.chat.completions.create(
-            model="sonar-pro",      # ⭐ Better accuracy for financial data
-            messages=[
-                {"role": "system", "content": "You are a precise financial data extraction assistant. Return only valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0,
-            max_tokens=50,          # Just need JSON with 1-2 numbers
-            top_p=1.0               # Default for flexibility with rare formats
+            model="sonar-pro",
+            messages=[{"role": "system", "content": "Return only valid JSON."},
+                     {"role": "user", "content": prompt_builder(feature_name, chunk, form_type)}],
+            temperature=0.0, max_tokens=200, top_p=1.0
         )
-        
-        content: Any = response.choices[0].message.content
-        result = "".join(getattr(item, 'text', str(item)) for item in content) if isinstance(content, list) else str(content)
-        return _parse_numeric_response(result.strip(), form_type)
+        return parser(_extract_text(response.choices[0].message.content), form_type)
     except Exception as e:
         print(f"    Error: {e}")
-        return {"quarterly": None} if form_type == "10-Q" else {"annual": None, "quarterly": None}
+        return _empty_result(form_type, parser)
 
 
-def _extract_qualitative(client: Perplexity, filing_text: str, feature_name: str, form_type: str) -> Dict[str, Any]:
-    """Extract qualitative score with evidence from beginning of filing."""
-    # For qualitative: business narrative is early in filing (Item 1)
-    # Use first 80k chars (covers Item 1 and Item 1A typically)
-    text_chunk = filing_text[:80000]
-    
-    prompt = f"""Assess the company's exposure to "{feature_name}" in this SEC filing.
-
-Return ONLY valid JSON in this exact format:
-{{"score": <integer 1-10>, "evidence": "<brief supporting facts>"}}
-
-Scoring guide:
-1-2: Not mentioned or negligible
-3-4: Minor mentions
-5-6: Moderate focus
-7-8: Significant strategic focus
-9-10: Core to business model
-
-Keep evidence under 100 words, focus on facts and numbers.
-
-Filing text:
-{text_chunk}
-
+def _build_numeric_prompt(feature: str, text: str, form_type: str) -> str:
+    """Build numeric extraction prompt."""
+    if form_type == "10-Q":
+        return f"""Extract "{feature}" from this 10-Q section.
+Return JSON: {{"quarterly": <number>}}
+Convert M/B to actual numbers. Use null if not found.
+Text: {text}
 JSON:"""
-    
-    result = ""
-    try:
-        response = client.chat.completions.create(
-            model="sonar-pro",      # ⭐ Better reasoning for qualitative assessment
-            messages=[
-                {"role": "system", "content": "You are a financial analysis assistant. Return only valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0,
-            max_tokens=200,         # Score + detailed evidence
-            top_p=1.0               # Need creativity for evidence synthesis
-        )
-        
-        content: Any = response.choices[0].message.content
-        result = "".join(getattr(item, 'text', str(item)) for item in content) if isinstance(content, list) else str(content)
-        result = result.strip()
-        
-        # Extract JSON if wrapped in markdown
-        if result.startswith("```"):
-            result = result.split("```")[1]
-            if result.startswith("json"):
-                result = result[4:]
-            result = result.strip()
-        
-        data = json.loads(result)
-        return {
-            "type": "score",
-            "score": int(data.get("score", 5)),
-            "evidence": data.get("evidence", "No evidence provided")[:200]
-        }
-    except Exception as e:
-        print(f"Error extracting qualitative: {e}")
-        print(f"Raw response: {result}")
-        return {"type": "score", "score": None, "evidence": "Extraction failed"}
-
-
-def _build_10q_numeric_prompt(feature: str, text: str) -> str:
-    """Build numeric extraction prompt for 10-Q."""
-    return f"""Extract "{feature}" from this 10-Q quarterly filing section.
-
-Return ONLY valid JSON: {{"quarterly": <number>}}
-
-Rules:
-- Extract the quarterly value for the period covered
-- Convert thousands/millions/billions to actual numbers (e.g., "$5.2M" → 5200000)
-- If not found in this section, use null
-- Return ONLY the JSON, no explanation
-
-Filing section:
-{text}
-
+    else:
+        return f"""Extract "{feature}" from this 10-K section.
+Return JSON: {{"annual": <number>, "quarterly": <number>}}
+annual = full year, quarterly = Q4 (or null). Convert M/B.
+Text: {text}
 JSON:"""
 
 
-def _build_10k_numeric_prompt(feature: str, text: str) -> str:
-    """Build numeric extraction prompt for 10-K."""
-    return f"""Extract "{feature}" from this 10-K annual filing section.
-
-Return ONLY valid JSON: {{"annual": <number>, "quarterly": <number>}}
-
-Rules:
-- "annual": Full fiscal year total/value
-- "quarterly": Q4 value if separately stated, else null
-- For balance sheet items (assets, liabilities), both may be the same
-- Convert thousands/millions/billions to actual numbers
-- If not found in this section, use null
-- Return ONLY the JSON, no explanation
-
-Filing section:
-{text}
-
+def _build_qualitative_prompt(feature: str, text: str, form_type: str) -> str:
+    """Build qualitative extraction prompt."""
+    return f"""Assess "{feature}" in this filing section.
+Return JSON: {{"score": <1-10>, "evidence": "<brief facts>"}}
+Score: 1-2=none, 3-4=minor, 5-6=moderate, 7-8=significant, 9-10=core
+Text: {text}
 JSON:"""
 
 
-def _parse_numeric_response(response: str, form_type: str) -> Dict[str, Optional[float]]:
+def _parse_numeric(response: str, form_type: str) -> Dict[str, Any]:
     """Parse numeric JSON response."""
+    data = _parse_json(response)
+    if form_type == "10-Q":
+        return {"type": "numeric", "quarterly": _to_float(data.get("quarterly"))}
+    else:
+        return {"type": "numeric", 
+                "annual": _to_float(data.get("annual")), 
+                "quarterly": _to_float(data.get("quarterly"))}
+
+
+def _parse_qualitative(response: str, form_type: str) -> Dict[str, Any]:
+    """Parse qualitative JSON response."""
+    data = _parse_json(response)
+    return {"type": "score",
+            "score": int(data.get("score", 5)),
+            "evidence": str(data.get("evidence", "No evidence"))[:200]}
+
+
+def _parse_json(response: str) -> Dict:
+    """Extract and parse JSON from response."""
+    text = response.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1].lstrip("json").strip()
+    
     try:
-        data = json.loads(response)
-        if form_type == "10-Q":
-            return {"quarterly": _clean_number(data.get("quarterly"))}
-        else:
-            return {
-                "annual": _clean_number(data.get("annual")),
-                "quarterly": _clean_number(data.get("quarterly"))
-            }
+        return json.loads(text)
     except json.JSONDecodeError:
-        # Fallback: extract numbers from text
-        numbers = re.findall(r'[-+]?\d+\.?\d*(?:e[-+]?\d+)?', response.replace(",", ""))
-        if form_type == "10-Q":
-            return {"quarterly": float(numbers[0]) if numbers else None}
-        else:
-            if len(numbers) >= 2:
-                return {"annual": float(numbers[0]), "quarterly": float(numbers[1])}
-            elif len(numbers) == 1:
-                return {"annual": float(numbers[0]), "quarterly": None}
-            return {"annual": None, "quarterly": None}
+        return {}
 
 
-def _clean_number(value: Any) -> Optional[float]:
+def _get_chunk_priority(num_chunks: int) -> list:
+    """Smart chunk ordering: financial data typically in middle chunks."""
+    if num_chunks > 4:
+        return [2, 3, 4, 1] + list(range(5, num_chunks)) + [0]
+    elif num_chunks > 1:
+        return list(range(1, num_chunks)) + [0]
+    return [0]
+
+
+def _has_data(result: Dict) -> bool:
+    """Check if result contains data."""
+    if result.get("type") == "numeric":
+        return result.get("annual") is not None or result.get("quarterly") is not None
+    elif result.get("type") == "score":
+        return result.get("score") is not None
+    return False
+
+
+def _empty_result(form_type: str, parser: Callable) -> Dict[str, Any]:
+    """Return empty result based on type."""
+    if parser == _parse_numeric:
+        return {"type": "numeric", "quarterly": None} if form_type == "10-Q" else \
+               {"type": "numeric", "annual": None, "quarterly": None}
+    else:
+        return {"type": "score", "score": None, "evidence": "Not found"}
+
+
+def _extract_text(content: Any) -> str:
+    """Extract text from Perplexity response content."""
+    if isinstance(content, list):
+        return "".join(getattr(item, 'text', str(item)) for item in content)
+    return str(content)
+
+
+def _to_float(value: Any) -> Optional[float]:
     """Convert value to float."""
     if value is None or (isinstance(value, str) and value.lower() == "null"):
         return None
