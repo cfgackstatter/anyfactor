@@ -1,6 +1,5 @@
 import os
 import json
-import re
 from typing import Optional, Dict, Any, Callable
 from perplexity import Perplexity
 from dotenv import load_dotenv
@@ -9,25 +8,13 @@ load_dotenv()
 
 CHUNK_SIZE = 40000
 
-def extract_feature(filing_text: str, feature_name: str, form_type: str) -> Dict[str, Any]:
-    """Auto-detect and extract either numeric or qualitative features."""
+def classify_feature(feature_name: str) -> str:
+    """Classify feature once: numeric vs qualitative."""
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
         raise ValueError("PERPLEXITY_API_KEY not found")
     
     client = Perplexity(api_key=api_key)
-    feature_type = _classify_feature(client, feature_name)
-    
-    if feature_type == "numeric":
-        return _extract_iteratively(client, filing_text, feature_name, form_type, 
-                                    _build_numeric_prompt, _parse_numeric)
-    else:
-        return _extract_iteratively(client, filing_text, feature_name, form_type,
-                                    _build_qualitative_prompt, _parse_qualitative)
-
-
-def _classify_feature(client: Perplexity, feature_name: str) -> str:
-    """Fast classification: numeric vs qualitative."""
     prompt = f"""Is "{feature_name}" numeric or qualitative?
 Numeric: revenue, assets, employees, spending
 Qualitative: AI exposure, ESG, innovation
@@ -44,6 +31,22 @@ Answer:"""
         return "numeric" if "numeric" in result else "qualitative"
     except Exception:
         return "numeric"
+
+
+def extract_feature(filing_text: str, feature_name: str, form_type: str, feature_type: str) -> Dict[str, Any]:
+    """Extract feature given its pre-determined type."""
+    api_key = os.getenv("PERPLEXITY_API_KEY")
+    if not api_key:
+        raise ValueError("PERPLEXITY_API_KEY not found")
+    
+    client = Perplexity(api_key=api_key)
+    
+    if feature_type == "numeric":
+        return _extract_iteratively(client, filing_text, feature_name, form_type, 
+                                    _build_numeric_prompt, _parse_numeric)
+    else:
+        return _extract_iteratively(client, filing_text, feature_name, form_type,
+                                    _build_qualitative_prompt, _parse_qualitative)
 
 
 def _extract_iteratively(client: Perplexity, filing_text: str, feature_name: str, 

@@ -31,6 +31,11 @@ def extract_endpoint():
     def generate():
         results = []
         
+        # ⭐ Classify feature ONCE before processing any filings
+        from llm import classify_feature
+        feature_type = classify_feature(feature)
+        print(f"Feature '{feature}' classified as: {feature_type}")
+        
         for ticker_idx, ticker in enumerate(tickers):
             cik = ticker_to_cik(ticker)
             if not cik:
@@ -56,7 +61,6 @@ def extract_endpoint():
                 
                 html = fetch_filing(filing["url"])
                 if not html:
-                    # Add placeholder based on form type
                     if filing["form_type"] == "10-K":
                         results.extend([
                             _create_result(ticker, None, "annual", filing, feature, "Failed to fetch"),
@@ -67,11 +71,12 @@ def extract_endpoint():
                     continue
                 
                 clean_text = prepare_for_llm(html)
-                extraction = extract_feature(clean_text, feature, filing["form_type"])
+                
+                # ⭐ Pass feature_type to extract_feature (no classification per filing)
+                extraction = extract_feature(clean_text, feature, filing["form_type"], feature_type)
                 
                 # Process based on extraction type
                 if extraction.get("type") == "numeric":
-                    # Numeric extraction
                     if filing["form_type"] == "10-K":
                         results.extend([
                             _create_result(ticker, extraction.get("annual"), "annual", filing, feature),
@@ -79,9 +84,7 @@ def extract_endpoint():
                         ])
                     else:
                         results.append(_create_result(ticker, extraction.get("quarterly"), "quarterly", filing, feature))
-                
                 elif extraction.get("type") == "score":
-                    # Qualitative score extraction
                     score = extraction.get("score")
                     evidence = extraction.get("evidence", "")
                     results.append({
