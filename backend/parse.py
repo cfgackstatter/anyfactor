@@ -48,14 +48,9 @@ def clean_html(html: str) -> str:
     
     return '\n'.join(lines)
 
-def prepare_for_llm(html: str, max_chars: int = 50000) -> str:
-    """Prepare filing for LLM by cleaning and truncating if needed."""
-    clean = clean_html(html)
-    
-    if len(clean) > max_chars:
-        clean = clean[:max_chars] + "\n[TRUNCATED]"
-    
-    return clean
+def prepare_for_llm(html: str) -> str:
+    """Prepare filing for LLM by cleaning HTML."""
+    return clean_html(html)
 
 
 if __name__ == "__main__":

@@ -15,21 +15,48 @@ def classify_feature(feature_name: str) -> str:
         raise ValueError("PERPLEXITY_API_KEY not found")
     
     client = Perplexity(api_key=api_key)
-    prompt = f"""Is "{feature_name}" numeric or qualitative?
-Numeric: revenue, assets, employees, spending
-Qualitative: AI exposure, ESG, innovation
-Answer:"""
+    
+    # More explicit prompt with better examples
+    prompt = f"""Classify this feature as NUMERIC or QUALITATIVE.
+
+NUMERIC features are measurable quantities with specific numbers in financial statements, for example:
+- Revenue, sales, income
+- Assets, liabilities, equity, cash
+- Employees, headcount
+- R&D spending, capex, expenses
+- Earnings, profit, loss
+- Debt, market cap, book value
+
+QUALITATIVE features are descriptive assessments without specific numbers, for example:
+- AI exposure, AI strategy
+- ESG commitment, sustainability
+- Innovation focus, digital transformation
+- Crypto involvement
+- Risk assessment, recession exposure
+
+Feature: "{feature_name}"
+
+Answer with ONLY one word: NUMERIC or QUALITATIVE"""
     
     try:
         response = client.chat.completions.create(
             model="sonar",
-            messages=[{"role": "system", "content": "One word only."}, 
+            messages=[{"role": "system", "content": "Answer with only one word: NUMERIC or QUALITATIVE"},
                      {"role": "user", "content": prompt}],
             temperature=0.0, max_tokens=5, top_p=0.1
         )
-        result = _extract_text(response.choices[0].message.content).lower()
-        return "numeric" if "numeric" in result else "qualitative"
-    except Exception:
+        result = _extract_text(response.choices[0].message.content).strip().upper()
+        
+        # More robust parsing
+        if "NUMERIC" in result:
+            return "numeric"
+        elif "QUALITATIVE" in result:
+            return "qualitative"
+        else:
+            # Default to numeric for financial terms
+            return "numeric"
+    except Exception as e:
+        print(f"Classification error: {e}")
         return "numeric"
 
 
