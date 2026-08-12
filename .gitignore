@@ -19,6 +19,7 @@ backend/.env
 # Frontend
 frontend/node_modules/
 frontend/build/
+frontend/.env
 frontend/.env.local
 frontend/.env.production
 frontend/npm-debug.log*
@@ -26,12 +27,13 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
 *~
-
 # OS
 .DS_Store
 Thumbs.db

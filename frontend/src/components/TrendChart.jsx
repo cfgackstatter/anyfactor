@@ -1,79 +1,64 @@
 import React from 'react';
 import { Line } from 'react-chartjs-2';
-import { Box, Typography, Paper, Chip } from '@mui/material';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import TrendingFlatIcon from '@mui/icons-material/TrendingFlat';
+import { Box, Typography, Stack } from '@mui/material';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
-  Title,
   Tooltip,
-  Legend,
+  Filler,
 } from 'chart.js';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
+
+function formatCompact(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `${(n / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${(n / 1e3).toFixed(2)}K`;
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
 
 const TrendChart = ({ data }) => {
-  if (!data || data.length < 2) {
-    return null;
-  }
+  if (!data || data.length < 2) return null;
 
-  // Filter out score-type data (charts only for numeric)
-  const numericData = data.filter(d => d.value_type !== 'score');
+  const numericData = data.filter((d) => d.value_type !== 'score');
+  if (numericData.length < 2) return null;
 
-  if (numericData.length < 2) {
-    return null;
-  }
-
-  // Sort by date (oldest first)
-  const sortedData = [...numericData].sort((a, b) => 
-    new Date(a.filing_date) - new Date(b.filing_date)
+  const sortedData = [...numericData].sort(
+    (a, b) => new Date(a.filing_date) - new Date(b.filing_date),
   );
 
-  const dates = sortedData.map(d => d.filing_date);
-  const values = sortedData.map(d => d.value || 0);
-  
+  const dates = sortedData.map((d) => d.filing_date);
+  const values = sortedData.map((d) => d.value ?? 0);
   const latestValue = values[values.length - 1];
   const oldestValue = values[0];
-  const growthRate = ((latestValue - oldestValue) / oldestValue) * 100;
+  const growthRate =
+    oldestValue === 0 ? null : ((latestValue - oldestValue) / Math.abs(oldestValue)) * 100;
   const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
-  
-  const periodType = data[0].period_type || 'unknown';
-  const periodLabel = periodType === 'annual' ? 'Annual' : 'Quarterly';
 
-  const getTrendIcon = () => {
-    if (growthRate > 5) return <TrendingUpIcon sx={{ color: '#10B981' }} />;
-    if (growthRate < -5) return <TrendingDownIcon sx={{ color: '#EF4444' }} />;
-    return <TrendingFlatIcon sx={{ color: '#6B7280' }} />;
-  };
-
-  const getTrendColor = () => {
-    if (growthRate > 5) return '#10B981';
-    if (growthRate < -5) return '#EF4444';
-    return '#6B7280';
-  };
+  const periodLabel = data[0].period_type === 'annual' ? 'Annual' : 'Quarterly';
+  const lineColor =
+    growthRate == null ? '#5B6B75' : growthRate > 5 ? '#1B7F5A' : growthRate < -5 ? '#B42318' : '#5B6B75';
+  const growthLabel =
+    growthRate == null ? 'n/a' : `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(1)}%`;
 
   const chartData = {
     labels: dates,
     datasets: [
       {
-        label: data[0].feature || 'Value',
         data: values,
-        borderColor: getTrendColor(),
-        backgroundColor: getTrendColor() + '20',
-        tension: 0.3,
+        borderColor: lineColor,
+        backgroundColor: `${lineColor}14`,
+        borderWidth: 1.5,
+        pointRadius: 2.5,
+        pointHoverRadius: 4,
+        tension: 0.15,
         fill: true,
       },
     ],
@@ -82,68 +67,77 @@ const TrendChart = ({ data }) => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    animation: { duration: 450 },
     plugins: {
-      legend: {
-        display: false,
-      },
+      legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (context) => {
-            return `Value: ${context.parsed.y.toLocaleString()}`;
-          },
+          label: (ctx) => formatCompact(ctx.parsed.y),
         },
       },
     },
     scales: {
+      x: {
+        grid: { color: 'rgba(11,31,42,0.06)' },
+        ticks: { font: { size: 10, family: 'IBM Plex Mono' }, color: '#5B6B75', maxRotation: 0 },
+      },
       y: {
         beginAtZero: false,
+        grid: { color: 'rgba(11,31,42,0.06)' },
         ticks: {
-          callback: (value) => value.toLocaleString(),
+          font: { size: 10, family: 'IBM Plex Mono' },
+          color: '#5B6B75',
+          callback: (value) => formatCompact(value),
         },
       },
     },
   };
 
   return (
-    <Paper elevation={2} sx={{ p: 3, mt: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          {data[0].feature} - {data[0].ticker} ({periodLabel})
+    <Box
+      className="af-results"
+      sx={{
+        mt: 1.5,
+        bgcolor: 'background.paper',
+        border: '1px solid',
+        borderColor: 'divider',
+        p: 1.25,
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+        <Typography variant="h2">
+          {data[0].ticker} · {data[0].feature} · {periodLabel}
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Chip
-            icon={getTrendIcon()}
-            label={`${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(1)}%`}
-            color={growthRate > 5 ? 'success' : growthRate < -5 ? 'error' : 'default'}
-          />
-        </Box>
-      </Box>
+        <Typography
+          variant="caption"
+          className="mono"
+          sx={{ color: lineColor, fontWeight: 600 }}
+        >
+          {growthLabel}
+        </Typography>
+      </Stack>
 
-      <Box sx={{ height: 300 }}>
+      <Box sx={{ height: 180 }}>
         <Line data={chartData} options={options} />
       </Box>
 
-      <Box sx={{ display: 'flex', gap: 3, mt: 2, justifyContent: 'center' }}>
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="caption" color="text.secondary">Latest</Typography>
-          <Typography variant="body2" fontWeight="bold">
-            {latestValue.toLocaleString()}
-          </Typography>
-        </Box>
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="caption" color="text.secondary">Average</Typography>
-          <Typography variant="body2" fontWeight="bold">
-            {avgValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-          </Typography>
-        </Box>
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="caption" color="text.secondary">Growth</Typography>
-          <Typography variant="body2" fontWeight="bold" color={getTrendColor()}>
-            {growthRate >= 0 ? '+' : ''}{growthRate.toFixed(1)}%
-          </Typography>
-        </Box>
-      </Box>
-    </Paper>
+      <Stack direction="row" spacing={3} sx={{ mt: 1 }}>
+        {[
+          ['Latest', formatCompact(latestValue)],
+          ['Avg', formatCompact(avgValue)],
+          ['Δ', growthLabel],
+        ].map(([label, value]) => (
+          <Box key={label}>
+            <Typography variant="caption" display="block">
+              {label}
+            </Typography>
+            <Typography variant="body2" className="mono" sx={{ color: 'text.primary', fontWeight: 600 }}>
+              {value}
+            </Typography>
+          </Box>
+        ))}
+      </Stack>
+    </Box>
   );
 };
 

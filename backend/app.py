@@ -1,124 +1,70 @@
-from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
+"""Flask application entrypoint."""
+
+from __future__ import annotations
+
 import json
-from typing import Optional, Dict, Any
+import logging
 
-from sec import ticker_to_cik, get_filing_urls
-from parse import fetch_filing, prepare_for_llm
-from llm import extract_feature
+from flask import Flask, Response, jsonify, request
+from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
+from auth import require_api_key
+from config import get_settings
+from extract import run_extraction
+from sec import warm_ticker_cache
+from validation import parse_extract_request
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+settings = get_settings()
 app = Flask(__name__)
-CORS(app)
+
+CORS(
+    app,
+    origins=settings.frontend_origins,
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key"],
+)
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[settings.default_rate_limit],
+    storage_uri="memory://",
+)
 
 
-@app.route('/health', methods=['GET'])
+@app.route("/health", methods=["GET"])
+@limiter.exempt
 def health():
-    """Health check endpoint."""
     return jsonify({"status": "healthy"})
 
 
-@app.route('/api/extract', methods=['POST'])
+@app.route("/api/extract", methods=["POST"])
+@limiter.limit(settings.extract_rate_limit)
 def extract_endpoint():
-    """Extract features from SEC filings with streaming progress."""
-    data = request.get_json()
-    tickers = data.get('tickers', [])
-    feature = data.get('feature', '')
-    limit = data.get('limit', 5)
-    
-    if not tickers or not feature:
-        return jsonify({"error": "tickers and feature are required"}), 400
-    
+    if err := require_api_key(request):
+        return err
+
+    payload, err = parse_extract_request(request.get_json(silent=True))
+    if err:
+        return err
+
     def generate():
-        results = []
-        
-        # ⭐ Classify feature ONCE before processing any filings
-        from llm import classify_feature
-        feature_type = classify_feature(feature)
-        print(f"Feature '{feature}' classified as: {feature_type}")
-        
-        for ticker_idx, ticker in enumerate(tickers):
-            cik = ticker_to_cik(ticker)
-            if not cik:
-                results.append({"ticker": ticker, "error": "Ticker not found"})
-                continue
-            
-            filings = get_filing_urls(cik, limit=limit)
-            if not filings:
-                results.append({"ticker": ticker, "error": "No filings found"})
-                continue
-            
-            for filing_idx, filing in enumerate(filings):
-                # Send progress
-                progress_msg = {
-                    "type": "progress",
-                    "ticker": ticker,
-                    "current": filing_idx + 1,
-                    "total": len(filings),
-                    "ticker_current": ticker_idx + 1,
-                    "ticker_total": len(tickers)
-                }
-                yield json.dumps(progress_msg) + '\n'
-                
-                html = fetch_filing(filing["url"])
-                if not html:
-                    if filing["form_type"] == "10-K":
-                        results.extend([
-                            _create_result(ticker, None, "annual", filing, feature, "Failed to fetch"),
-                            _create_result(ticker, None, "quarterly", filing, feature, "Failed to fetch")
-                        ])
-                    else:
-                        results.append(_create_result(ticker, None, "quarterly", filing, feature, "Failed to fetch"))
-                    continue
-                
-                clean_text = prepare_for_llm(html)
-                
-                # ⭐ Pass feature_type to extract_feature (no classification per filing)
-                extraction = extract_feature(clean_text, feature, filing["form_type"], feature_type)
-                
-                # Process based on extraction type
-                if extraction.get("type") == "numeric":
-                    if filing["form_type"] == "10-K":
-                        results.extend([
-                            _create_result(ticker, extraction.get("annual"), "annual", filing, feature),
-                            _create_result(ticker, extraction.get("quarterly"), "quarterly", filing, feature)
-                        ])
-                    else:
-                        results.append(_create_result(ticker, extraction.get("quarterly"), "quarterly", filing, feature))
-                elif extraction.get("type") == "score":
-                    score = extraction.get("score")
-                    evidence = extraction.get("evidence", "")
-                    results.append({
-                        "ticker": ticker,
-                        "value": score,
-                        "value_type": "score",
-                        "evidence": evidence,
-                        "filing_url": filing["url"],
-                        "filing_date": filing["filing_date"],
-                        "form_type": filing["form_type"],
-                        "feature": feature
-                    })
-        
-        yield json.dumps({"type": "complete", "results": results}) + '\n'
-    
-    return Response(generate(), mimetype='application/x-ndjson')
+        for message in run_extraction(payload):
+            yield json.dumps(message) + "\n"
+
+    return Response(generate(), mimetype="application/x-ndjson")
 
 
-def _create_result(ticker: str, value: Any, period_type: str, filing: Dict, feature: str, error: Optional[str] = None) -> Dict:
-    """Helper to create result dict."""
-    result = {
-        "ticker": ticker,
-        "value": value,
-        "value_type": "numeric",
-        "period_type": period_type,
-        "filing_url": filing["url"],
-        "filing_date": filing["filing_date"],
-        "form_type": filing["form_type"],
-        "feature": feature
-    }
-    if error:
-        result["error"] = error
-    return result
+def create_app() -> Flask:
+    """Factory used by WSGI servers / tests."""
+    return app
 
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    warm_ticker_cache()
+    app.run(debug=settings.flask_debug, host=settings.flask_host, port=settings.flask_port)

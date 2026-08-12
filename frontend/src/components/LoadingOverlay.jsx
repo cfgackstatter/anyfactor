@@ -1,24 +1,32 @@
 import React from 'react';
 import { Backdrop, CircularProgress, Typography, Box } from '@mui/material';
 
-const LoadingOverlay = ({ open, message }) => {
-  return (
-    <Backdrop
+const LoadingOverlay = ({ open, message }) => (
+  <Backdrop
+    open={open}
+    sx={{
+      zIndex: (theme) => theme.zIndex.modal + 1,
+      backgroundColor: 'rgba(11, 31, 42, 0.45)',
+      backdropFilter: 'blur(2px)',
+    }}
+  >
+    <Box
       sx={{
-        color: '#fff',
-        zIndex: (theme) => theme.zIndex.drawer + 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        bgcolor: 'background.paper',
+        border: '1px solid',
+        borderColor: 'divider',
+        px: 2.5,
+        py: 2,
+        minWidth: 240,
+        textAlign: 'center',
       }}
-      open={open}
     >
-      <Box sx={{ textAlign: 'center' }}>
-        <CircularProgress color="inherit" size={60} />
-        <Typography variant="h6" sx={{ mt: 2 }}>
-          {message || 'Processing...'}
-        </Typography>
-      </Box>
-    </Backdrop>
-  );
-};
+      <CircularProgress size={22} thickness={4} color="primary" />
+      <Typography variant="body2" sx={{ mt: 1.25, color: 'text.primary' }}>
+        {message || 'Working…'}
+      </Typography>
+    </Box>
+  </Backdrop>
+);
 
 export default LoadingOverlay;

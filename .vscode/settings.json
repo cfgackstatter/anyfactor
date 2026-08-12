@@ -1,0 +1,20 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.activateEnvInCurrentTerminal": true,
+  "python.venvPath": "${workspaceFolder}/backend",
+  "python.venvFolders": ["venv"],
+  "terminal.integrated.env.linux": {
+    "VIRTUAL_ENV": "${workspaceFolder}/backend/venv",
+    "PATH": "${workspaceFolder}/backend/venv/bin:${env:PATH}"
+  },
+  "terminal.integrated.env.osx": {
+    "VIRTUAL_ENV": "${workspaceFolder}/backend/venv",
+    "PATH": "${workspaceFolder}/backend/venv/bin:${env:PATH}"
+  },
+  "terminal.integrated.env.windows": {
+    "VIRTUAL_ENV": "${workspaceFolder}/backend/venv",
+    "PATH": "${workspaceFolder}/backend/venv/Scripts;${env:PATH}"
+  },
+  "terminal.integrated.cwd": "${workspaceFolder}"
+}

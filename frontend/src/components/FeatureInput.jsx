@@ -1,16 +1,17 @@
 import React from 'react';
 import { TextField } from '@mui/material';
 
-const FeatureInput = ({ value, onChange }) => {
+const FeatureInput = ({ value, onChange, onSubmit }) => {
   return (
     <TextField
       fullWidth
-      label="Feature to Extract"
-      placeholder="e.g., book value, total revenue, number of employees"
+      label="Feature"
+      placeholder="revenue, book value, AI exposure…"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      variant="outlined"
-      margin="normal"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && onSubmit) onSubmit();
+      }}
     />
   );
 };
